@@ -41,8 +41,8 @@ apt cross compilers on the Linux build box are declared under `[bootstrap]`.
 mise trust                        # once, per clone
 mise bootstrap packages apply     # Linux cross box only; installs the apt cross gccs (sudo)
 mise run build                    # host release build
-mise run agent-linux              # static x86_64 agent for the Debian partition
-mise run agent-windows            # x86_64 agent for the Windows partition
+mise run build-agent-linux        # static x86_64 agent for the Debian partition
+mise run build-agent-windows      # x86_64 agent for the Windows partition
 mise run build-control            # control plane for the host
 ```
 
