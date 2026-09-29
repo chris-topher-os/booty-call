@@ -42,33 +42,15 @@ h1 { font-size: 1.1rem; font-weight: 600; margin: 0 0 1.25rem; letter-spacing: 0
 .status { min-height: 1.3em; font-size: 0.85rem; color: #8b949e; margin-top: 0.3rem; }
 .status.stuck { color: #f85149; }
 .status.switching { color: #d29922; }
-#login { text-align: center; margin-top: 3rem; display: none; }
-#login input {
-  width: 220px; padding: 0.55rem; font-size: 1rem;
-  background: #171b21; color: #dfe3e8;
-  border: 1px solid #2b323b; border-radius: 8px;
-}
-#login button, #logout {
-  background: #2b323b; color: #dfe3e8; border: none;
-  padding: 0.55rem 1rem; border-radius: 8px; cursor: pointer; font-size: 0.9rem;
-}
-#logout { background: none; color: #8b949e; font-size: 0.75rem; padding: 0.2rem; }
-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem; }
+header { margin-bottom: 1.25rem; }
 </style>
 </head>
 <body>
 <main>
   <header>
     <h1>booty-call</h1>
-    <button id="logout" style="display:none">sign out</button>
   </header>
-  <div id="login">
-    <p>Enter the booty-call API token.</p>
-    <input type="password" id="token-input" placeholder="token" autocomplete="off">
-    <br><br>
-    <button id="login-btn">sign in</button>
-  </div>
-  <div id="boxes" style="display:none"></div>
+  <div id="boxes"></div>
 </main>
 <script src="/app.js"></script>
 <script>

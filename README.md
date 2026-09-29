@@ -8,10 +8,14 @@ PWA / curl --tailnet--> control (macOS daemon) --WoL broadcast (LAN)--> box NIC 
                         control --tailnet--> agent on each OS (status / reboot)
 ```
 
-- **agent** (`crates/agent`): runs on every OS partition. Two authenticated
-  endpoints only: `GET /status`, `POST /reboot` (sets the one-shot UEFI
-  `BootNext` variable for the requested OS, then reboots). No other surface.
-  Liveness = the control polling `/status`; no custom heartbeat.
+- **agent** (`crates/agent`): runs on every OS partition. Two endpoints only:
+  `GET /status`, `POST /reboot` (sets the one-shot UEFI `BootNext` variable
+  for the requested OS, then reboots). No other surface. Liveness = the
+  control polling `/status`; no custom heartbeat.
+- **auth**: no app-level tokens. Tailscale provides transport encryption and
+  identity; each agent/control resolves the source IP's tailnet node name via
+  `tailscale whois` and 403s anyone not in its `allowed_peers` list. Agents
+  only bind the tailnet interface — no tailscale, no service.
 - **control** (`crates/control`): node registry, liveness poller, per-box
   switch state machine, and a single-page PWA (radio button per OS partition).
 - Switch from online: one reboot. Switch from offline: WoL wakes the box into
@@ -52,42 +56,53 @@ mise run build-control
 ./install/control/install-macos.sh target/release/booty-call-control
 ```
 
-Edits `~/.config/booty-call/control.json`: box id/name, `default_os` (what the
-firmware boots on cold start), WoL MAC (and optional LAN IP), and keep the
-generated `admin_key`. Logs: `~/Library/Logs/booty-call/`.
+Edits `~/.config/booty-call/control.json`: `allowed_peers` (tailscale node
+names of the devices allowed to use the API/PWA), box id/name, `default_os`
+(what the firmware boots on cold start), and WoL MAC (and optional LAN IP).
+Logs: `~/Library/Logs/booty-call/`.
 
 ## Register a node + install an agent
 
-```sh
-# on the box's partition, once per OS (ts_ip from `tailscale ip -4`):
-TOKEN=$(curl -s -X POST -H "Authorization: Bearer $ADMIN_KEY" \
-  http://<control>:8765/api/boxes/<box>/nodes \
-  -d '{"os_id":"debian","ts_ip":"100.x.y.z"}' | jq -r .token)
+From a device whose node name is in the control's `allowed_peers`, once per OS
+(ts_ip from `tailscale ip -4` on the partition):
 
+```sh
+curl -s -X POST http://<control>:8765/api/boxes/<box>/nodes \
+  -H 'Content-Type: application/json' \
+  -d '{"os_id":"debian","ts_ip":"100.x.y.z"}'
+```
+
+Then install the agent on the partition:
+
+```sh
 # Debian partition:
 sudo install/agent/install-linux.sh --bin target/.../booty-call-agent \
-  --box-id <box> --os-id debian --token "$TOKEN" \
+  --box-id <box> --os-id debian --allowed-peers <control-node-name> \
   --boot-entries '{"debian":1,"windows":2}'
 
 # Windows partition (elevated):
 powershell -ExecutionPolicy Bypass -File install/agent/install-windows.ps1 \
-  -Bin booty-call-agent.exe -BoxId <box> -OsId windows -Token "$TOKEN" \
+  -Bin booty-call-agent.exe -BoxId <box> -OsId windows -AllowedPeers <control-node-name> \
   -BootEntries '{"debian":1,"windows":2}'
 ```
 
 Boot entry numbers come from the firmware boot menu or `sudo efibootmgr -v`.
 The agent needs the full map (it may be asked to reboot into any partition).
 
-## API (all `Authorization: Bearer <admin_key>`)
+## API
+
+All routes 403 unless the caller's source IP resolves (via `tailscale whois`)
+to a node in the control's `allowed_peers`.
 
 | method | path | body | result |
 |---|---|---|---|
 | GET | `/api/state` | – | boxes, per-node liveness, switch phase |
-| POST | `/api/boxes/:id/nodes` | `{"os_id","ts_ip","port"?}` | `{"os_id","token"}` (token shown once) |
+| POST | `/api/boxes/:id/nodes` | `{"os_id","ts_ip","port"?}` | `{"os_id"}` |
 | DELETE | `/api/boxes/:id/nodes/:os` | – | unregister |
 | POST | `/api/boxes/:id/switch` | `{"os"}` | 202 accepted / 409 already switching or stuck |
 
-PWA: browse `http://<control-tailnet-ip>:8765/`, enter the admin key.
+PWA: browse `http://<control-tailnet-ip>:8765/` from a browser on an allowed
+node.
 
 ## Firmware prerequisites (one-time, on the box)
 
@@ -105,5 +120,5 @@ PWA: browse `http://<control-tailnet-ip>:8765/`, enter the admin key.
 - The control must be L2-local to the box for WoL. If it later isn't, only
   the offline-branch degrades (marked stuck: "no response to wake-on-LAN");
   online switching is unaffected.
-- Node tokens are stored in `boxes.json` (0600) so the control can
-  authenticate to its own agents.
+- The whois result is cached per source IP for 60s in both directions
+  (allowed and denied), so the poller doesn't re-query tailscale every tick.

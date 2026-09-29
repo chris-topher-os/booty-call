@@ -16,13 +16,11 @@ PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
 DOMAIN="gui/$(id -u)"
 
 generate_config() {
-  local key
-  key="$(openssl rand -hex 32)"
   mkdir -p "$CFG_DIR"
   cat > "$CFG" <<EOF
 {
   "listen": "",
-  "admin_key": "$key",
+  "allowed_peers": ["<tailscale node names allowed to use the API and PWA, e.g. fabrico>"],
   "state_file": "$HOME/.local/share/booty-call/boxes.json",
   "poll_interval_secs": 3,
   "boxes": [
@@ -35,8 +33,7 @@ generate_config() {
   ]
 }
 EOF
-  chmod 600 "$CFG"
-  echo "wrote config template to $CFG — fill in the boxes, then note the admin_key"
+  echo "wrote config template to $CFG — fill in allowed_peers and the boxes"
 }
 
 uninstall() {

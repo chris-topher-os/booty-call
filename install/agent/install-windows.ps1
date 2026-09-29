@@ -2,8 +2,10 @@
 #
 # usage:
 #   powershell -ExecutionPolicy Bypass -File .\install-windows.ps1 `
-#     -Bin .\booty-call-agent.exe -BoxId gpu -OsId windows -Token <token-from-control> `
+#     -Bin .\booty-call-agent.exe -BoxId gpu -OsId windows -AllowedPeers fabrico `
 #     -BootEntries '{"debian":1,"windows":2}'
+#
+# -AllowedPeers: tailscale node name(s) of the control (comma-separated).
 #
 # -BootEntries maps every os_id this box can boot to its UEFI boot entry
 # number (visible in the firmware boot menu, or `efibootmgr -v` from Linux).
@@ -11,7 +13,7 @@ param(
   [Parameter(Mandatory)] [string] $Bin,
   [Parameter(Mandatory)] [string] $BoxId,
   [Parameter(Mandatory)] [string] $OsId,
-  [Parameter(Mandatory)] [string] $Token,
+  [Parameter(Mandatory)] [string] $AllowedPeers,
   [string] $BootEntries = '{}',
   [int] $Port = 8766
 )
@@ -29,12 +31,13 @@ $cfgDir = 'C:\ProgramData\booty-call'
 New-Item -ItemType Directory -Force -Path $binDir, $cfgDir | Out-Null
 Copy-Item $Bin (Join-Path $binDir 'booty-call-agent.exe') -Force
 
+$peersJson = ($AllowedPeers -split ',' | Where-Object { $_.Trim() }) | ForEach-Object { '"' + $_.Trim() + '"' } -join ', '
 $portLine = if ($Port -ne 8766) { ", `n  `"port`": $Port" } else { '' }
 $cfg = @"
 {
   "box_id": "$BoxId",
   "os_id": "$OsId",
-  "token": "$Token",
+  "allowed_peers": [$peersJson],
   "boot_entries": $BootEntries$portLine
 }
 "@

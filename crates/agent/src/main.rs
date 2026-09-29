@@ -9,11 +9,12 @@
 mod boot;
 
 use anyhow::Result;
-use common::{AgentConfig, RebootRequest, Status};
-use std::net::{IpAddr, Ipv4Addr};
+use common::{AgentConfig, RebootRequest, Status, whois_node};
+use std::collections::HashMap;
+use std::net::IpAddr;
 use std::process::Command;
-use std::sync::Arc;
-use std::time::Duration;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 use tiny_http::{Header, Method, Request, Response, Server};
 
 const DEFAULT_CONFIG_PATH: &str =
@@ -110,26 +111,34 @@ fn config_path() -> String {
 fn run_agent() -> Result<()> {
     let path = config_path();
     let cfg = Arc::new(AgentConfig::load(&path)?);
-    let status = Arc::new(build_status(&cfg));
 
-    let bind_ip = match tailscale_ip4() {
-        Some(ip) => ip,
-        None => {
-            eprintln!("booty-call-agent: warning: no tailscale IPv4 found; binding to 0.0.0.0 (token still required)");
-            IpAddr::V4(Ipv4Addr::UNSPECIFIED)
+    // No tailscale, no service: the peer check needs a tailnet source IP and
+    // the agent must never be reachable from the LAN unauthenticated, so we
+    // wait for the tailnet interface instead of falling back to 0.0.0.0.
+    let server = loop {
+        if let Some(ip) = tailscale_ip4() {
+            let addr = format!("{}:{}", ip, cfg.port);
+            match Server::http(&addr) {
+                Ok(s) => break s,
+                Err(e) => eprintln!("booty-call-agent: binding to {addr}: {e}; retrying"),
+            }
+        } else {
+            eprintln!("booty-call-agent: no tailscale IPv4 yet, waiting");
         }
+        std::thread::sleep(Duration::from_secs(5));
     };
-    let addr = format!("{}:{}", bind_ip, cfg.port);
-    let server = Server::http(&addr).map_err(|e| anyhow::anyhow!("binding to {addr}: {e}"))?;
+    let status = Arc::new(build_status(&cfg));
+    let peers = Arc::new(Mutex::new(HashMap::new()));
     println!(
-        "booty-call-agent: box={} os={} listening on {}",
-        cfg.box_id, cfg.os_id, addr
+        "booty-call-agent: box={} os={} listening on {} (peers: {:?})",
+        cfg.box_id, cfg.os_id, server.server_addr(), cfg.allowed_peers
     );
 
     for request in server.incoming_requests() {
         let cfg = Arc::clone(&cfg);
         let status = Arc::clone(&status);
-        std::thread::spawn(move || handle(request, cfg, status));
+        let peers = Arc::clone(&peers);
+        std::thread::spawn(move || handle(request, cfg, status, peers));
     }
     Ok(())
 }
@@ -138,29 +147,48 @@ fn build_status(cfg: &AgentConfig) -> Status {
     let hostname = hostname::get()
         .map(|h| h.to_string_lossy().into_owned())
         .unwrap_or_default();
+    let ts_ip = tailscale_ip4().map(|ip| ip.to_string()).unwrap_or_default();
+    let ts_hostname = whois_node(&ts_ip).map(|(_, full)| full).unwrap_or_default();
     Status {
         box_id: cfg.box_id.clone(),
         os_id: cfg.os_id.clone(),
-        ts_hostname: tailscale_node_name(),
-        ts_ip: tailscale_ip4().map(|ip| ip.to_string()).unwrap_or_default(),
+        ts_hostname,
+        ts_ip,
         hostname,
     }
 }
 
-fn handle(mut request: Request, cfg: Arc<AgentConfig>, status: Arc<Status>) {
+const PEER_TTL: Duration = Duration::from_secs(60);
+
+fn peer_ok(peers: &Arc<Mutex<HashMap<String, (bool, Instant)>>>, allowed: &[String], ip: &str) -> bool {
+    if let Some((ok, at)) = peers.lock().unwrap().get(ip) {
+        if at.elapsed() < PEER_TTL {
+            return *ok;
+        }
+    }
+    let ok = common::peer_allowed(allowed, ip);
+    peers.lock().unwrap().insert(ip.to_string(), (ok, Instant::now()));
+    ok
+}
+
+fn handle(
+    mut request: Request,
+    cfg: Arc<AgentConfig>,
+    status: Arc<Status>,
+    peers: Arc<Mutex<HashMap<String, (bool, Instant)>>>,
+) {
     let route = request.url().split('?').next().unwrap_or("/").to_string();
-    let auth = request
-        .headers()
-        .iter()
-        .find(|h| h.field.as_str() == "Authorization")
-        .map(|h| h.value.as_str().to_string());
+    let src = request
+        .remote_addr()
+        .map(|a| a.ip().to_string())
+        .unwrap_or_default(); // unknown source: whois will fail, request 403s
 
     let (code, body) = match (request.method(), route.as_str()) {
-        (Method::Get, "/status") if bearer_ok(&auth, &cfg.token) => (
+        (Method::Get, "/status") if peer_ok(&peers, &cfg.allowed_peers, &src) => (
             200,
             serde_json::to_string(&*status).unwrap_or_default(),
         ),
-        (Method::Post, "/reboot") if bearer_ok(&auth, &cfg.token) => {
+        (Method::Post, "/reboot") if peer_ok(&peers, &cfg.allowed_peers, &src) => {
             let mut body = String::new();
             if request.as_reader().read_to_string(&mut body).is_err() {
                 (400, r#"{"error":"unreadable body"}"#.into())
@@ -178,7 +206,7 @@ fn handle(mut request: Request, cfg: Arc<AgentConfig>, status: Arc<Status>) {
                 }
             }
         }
-        _ => (401, r#"{"error":"unauthorized"}"#.into()),
+        _ => (403, r#"{"error":"peer not allowed"}"#.into()),
     };
 
     let header = Header::from_bytes(&b"Content-Type"[..], &b"application/json"[..]).unwrap();
@@ -197,12 +225,6 @@ fn reboot_to(cfg: &AgentConfig, os: &str) -> Result<()> {
     boot::reboot();
 }
 
-fn bearer_ok(auth: &Option<String>, token: &str) -> bool {
-    auth.as_deref()
-        .and_then(|a| a.strip_prefix("Bearer "))
-        .is_some_and(|t| t == token)
-}
-
 fn tailscale_ip4() -> Option<IpAddr> {
     let out = Command::new("tailscale")
         .args(["ip", "-4"])
@@ -212,22 +234,4 @@ fn tailscale_ip4() -> Option<IpAddr> {
     s.parse().ok()
 }
 
-fn tailscale_node_name() -> String {
-    let out = match Command::new("tailscale")
-        .args(["status", "--json"])
-        .output()
-        .ok()
-    {
-        Some(o) => o,
-        None => return String::new(),
-    };
-    let v: serde_json::Value = match serde_json::from_slice(&out.stdout).ok() {
-        Some(v) => v,
-        None => return String::new(),
-    };
-    v.get("Self")
-        .and_then(|s| s.get("Name"))
-        .and_then(|n| n.as_str())
-        .unwrap_or_default()
-        .to_string()
-}
+

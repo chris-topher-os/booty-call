@@ -72,11 +72,35 @@ pub struct StateResponse {
 pub struct AgentConfig {
     pub box_id: String,
     pub os_id: String,
-    pub token: String,
+    /// Tailscale node names (short name or FQDN) allowed to talk to this
+    /// agent. Identity is resolved from the source IP via `tailscale whois`.
+    pub allowed_peers: Vec<String>,
     /// os_id -> UEFI boot entry number (the BootNext value).
     pub boot_entries: BTreeMap<String, u16>,
     #[serde(default = "default_port")]
     pub port: u16,
+}
+
+/// Identify a tailnet IP: `(short_name, fqdn)`, e.g.
+/// `("fabrico", "fabrico.tailnet.ts.net")`. None for non-tailnet addresses
+/// or when tailscale itself can't answer.
+pub fn whois_node(ip: &str) -> Option<(String, String)> {
+    let out = std::process::Command::new("tailscale")
+        .args(["whois", "--json", ip])
+        .output()
+        .ok()?;
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).ok()?;
+    let name = v.get("Node")?.get("Name")?.as_str()?;
+    let full = name.trim_end_matches('.').to_string();
+    let short = full.split('.').next()?.to_string();
+    Some((short, full))
+}
+
+/// True if `ip` resolves (via `tailscale whois`) to a node whose short or
+/// full name is in `allowed`. Non-tailnet sources never match.
+pub fn peer_allowed(allowed: &[String], ip: &str) -> bool {
+    whois_node(ip)
+        .is_some_and(|(short, full)| allowed.iter().any(|a| a == &short || a == &full))
 }
 
 fn default_port() -> u16 {

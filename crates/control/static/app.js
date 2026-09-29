@@ -1,54 +1,19 @@
 const $ = (s) => document.querySelector(s);
 
-let token = localStorage.getItem('booty-call_token') || '';
 let polling = false;
 
+// Access is enforced by the control: the source tailnet node (resolved via
+// `tailscale whois`) must be in its allowed_peers. No app-level token.
 async function api(path, opts = {}) {
   const res = await fetch('/api' + path, {
     ...opts,
-    headers: {
-      Authorization: 'Bearer ' + token,
-      ...(opts.body ? { 'Content-Type': 'application/json' } : {}),
-    },
+    headers: opts.body ? { 'Content-Type': 'application/json' } : {},
   });
-  if (res.status === 401) {
-    showLogin();
-    throw new Error('unauthorized');
+  if (res.status === 403) {
+    document.title = 'booty-call (not allowed)';
+    throw new Error('peer not allowed');
   }
   return res;
-}
-
-function showLogin() {
-  $('#login').style.display = 'block';
-  $('#boxes').style.display = 'none';
-  $('#logout').style.display = 'none';
-  $('#token-input').focus();
-}
-
-function showApp() {
-  $('#login').style.display = 'none';
-  $('#boxes').style.display = 'block';
-  $('#logout').style.display = 'inline';
-}
-
-$('#login-btn').onclick = login;
-$('#token-input').addEventListener('keydown', (e) => e.key === 'Enter' && login());
-$('#logout').onclick = () => {
-  token = '';
-  localStorage.removeItem('booty-call_token');
-  showLogin();
-};
-
-async function login() {
-  token = $('#token-input').value.trim();
-  const res = await api('/state');
-  if (res.ok) {
-    localStorage.setItem('booty-call_token', token);
-    showApp();
-    tick();
-  } else {
-    $('#token-input').value = '';
-  }
 }
 
 function el(tag, attrs = {}, ...children) {
@@ -124,10 +89,5 @@ async function tick() {
   polling = false;
 }
 
-if (token) {
-  showApp();
-  tick();
-} else {
-  showLogin();
-}
+tick();
 setInterval(tick, 4000);
