@@ -1,4 +1,4 @@
-//! oswitch agent: runs on each OS partition of a target box.
+//! booty-call agent: runs on each OS partition of a target box.
 //!
 //! Exposes exactly two authenticated endpoints to the control plane:
 //!   GET  /status  -> who am I
@@ -17,7 +17,7 @@ use std::time::Duration;
 use tiny_http::{Header, Method, Request, Response, Server};
 
 const DEFAULT_CONFIG_PATH: &str =
-    if cfg!(target_os = "windows") { r"C:\ProgramData\oswitch\agent.json" } else { "/etc/oswitch/agent.json" };
+    if cfg!(target_os = "windows") { r"C:\ProgramData\booty-call\agent.json" } else { "/etc/booty-call/agent.json" };
 
 #[cfg(target_os = "windows")]
 mod win {
@@ -31,7 +31,7 @@ mod win {
     use windows_service::service_control_handler::{self, ServiceControlHandlerResult};
     use windows_service::service_dispatcher;
 
-    const SERVICE_NAME: &str = "oswitchagent";
+    const SERVICE_NAME: &str = "bootycallagent";
 
     define_windows_service!(ffi_service_main, service_main);
 
@@ -48,7 +48,7 @@ mod win {
         let event_handler = |control_event| -> ServiceControlHandlerResult {
             match control_event {
                 ServiceControl::Stop => {
-                    println!("oswitch-agent: stop requested");
+                    println!("booty-call-agent: stop requested");
                     std::process::exit(0);
                 }
                 ServiceControl::Interrogate => ServiceControlHandlerResult::NoError,
@@ -58,7 +58,7 @@ mod win {
         let status = match service_control_handler::register(SERVICE_NAME, event_handler) {
             Ok(h) => h,
             Err(e) => {
-                eprintln!("oswitch-agent: service register: {e}");
+                eprintln!("booty-call-agent: service register: {e}");
                 std::process::exit(1);
             }
         };
@@ -72,7 +72,7 @@ mod win {
             process_id: None,
         });
         if let Err(e) = super::run_agent() {
-            eprintln!("oswitch-agent: {e:#}");
+            eprintln!("booty-call-agent: {e:#}");
             std::process::exit(1);
         }
     }
@@ -87,7 +87,7 @@ fn main() {
         return;
     }
     if let Err(e) = run_agent() {
-        eprintln!("oswitch-agent: {e:#}");
+        eprintln!("booty-call-agent: {e:#}");
         std::process::exit(1);
     }
 }
@@ -115,14 +115,14 @@ fn run_agent() -> Result<()> {
     let bind_ip = match tailscale_ip4() {
         Some(ip) => ip,
         None => {
-            eprintln!("oswitch-agent: warning: no tailscale IPv4 found; binding to 0.0.0.0 (token still required)");
+            eprintln!("booty-call-agent: warning: no tailscale IPv4 found; binding to 0.0.0.0 (token still required)");
             IpAddr::V4(Ipv4Addr::UNSPECIFIED)
         }
     };
     let addr = format!("{}:{}", bind_ip, cfg.port);
     let server = Server::http(&addr).map_err(|e| anyhow::anyhow!("binding to {addr}: {e}"))?;
     println!(
-        "oswitch-agent: box={} os={} listening on {}",
+        "booty-call-agent: box={} os={} listening on {}",
         cfg.box_id, cfg.os_id, addr
     );
 
@@ -191,7 +191,7 @@ fn reboot_to(cfg: &AgentConfig, os: &str) -> Result<()> {
         .boot_entry(os)
         .ok_or_else(|| anyhow::anyhow!("no boot entry configured for os {os:?}"))?;
     boot::set_bootnext(entry)?;
-    println!("oswitch-agent: BootNext={entry}, rebooting into {os:?}");
+    println!("booty-call-agent: BootNext={entry}, rebooting into {os:?}");
     // Give the HTTP response a moment to flush before the machine goes away.
     std::thread::sleep(Duration::from_millis(500));
     boot::reboot();

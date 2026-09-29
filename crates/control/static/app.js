@@ -1,6 +1,6 @@
 const $ = (s) => document.querySelector(s);
 
-let token = localStorage.getItem('oswitch_token') || '';
+let token = localStorage.getItem('booty-call_token') || '';
 let polling = false;
 
 async function api(path, opts = {}) {
@@ -35,7 +35,7 @@ $('#login-btn').onclick = login;
 $('#token-input').addEventListener('keydown', (e) => e.key === 'Enter' && login());
 $('#logout').onclick = () => {
   token = '';
-  localStorage.removeItem('oswitch_token');
+  localStorage.removeItem('booty-call_token');
   showLogin();
 };
 
@@ -43,7 +43,7 @@ async function login() {
   token = $('#token-input').value.trim();
   const res = await api('/state');
   if (res.ok) {
-    localStorage.setItem('oswitch_token', token);
+    localStorage.setItem('booty-call_token', token);
     showApp();
     tick();
   } else {

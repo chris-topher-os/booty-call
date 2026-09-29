@@ -1,4 +1,4 @@
-# oswitch
+# booty-call
 
 Remotely boot any OS partition of a multi-boot target box over Tailscale,
 whether the box is offline or already booted into a different OS.
@@ -21,8 +21,8 @@ PWA / curl --tailnet--> control (macOS daemon) --WoL broadcast (LAN)--> box NIC 
 
 ```
 crates/common    wire types + agent config
-crates/agent     oswitch-agent (tiny_http; systemd on Linux, service on Windows)
-crates/control   oswitch-control (axum) + static/ PWA
+crates/agent     booty-call-agent (tiny_http; systemd on Linux, service on Windows)
+crates/control   booty-call-control (axum) + static/ PWA
 install/agent    install.sh (Debian), install.ps1 (Windows)
 install/control  install.sh (macOS launchd agent)
 ```
@@ -31,12 +31,12 @@ install/control  install.sh (macOS launchd agent)
 
 ```sh
 make build-control
-./install/control/install.sh target/release/oswitch-control
+./install/control/install.sh target/release/booty-call-control
 ```
 
-Edits `~/.config/oswitch/control.json`: box id/name, `default_os` (what the
+Edits `~/.config/booty-call/control.json`: box id/name, `default_os` (what the
 firmware boots on cold start), WoL MAC (and optional LAN IP), and keep the
-generated `admin_key`. Logs: `~/Library/Logs/oswitch/`.
+generated `admin_key`. Logs: `~/Library/Logs/booty-call/`.
 
 ## Register a node + install an agent
 
@@ -47,13 +47,13 @@ TOKEN=$(curl -s -X POST -H "Authorization: Bearer $ADMIN_KEY" \
   -d '{"os_id":"debian","ts_ip":"100.x.y.z"}' | jq -r .token)
 
 # Debian partition:
-sudo install/agent/install.sh --bin target/.../oswitch-agent \
+sudo install/agent/install.sh --bin target/.../booty-call-agent \
   --box-id <box> --os-id debian --token "$TOKEN" \
   --boot-entries '{"debian":1,"windows":2}'
 
 # Windows partition (elevated):
 powershell -ExecutionPolicy Bypass -File install/agent/install.ps1 \
-  -Bin oswitch-agent.exe -BoxId <box> -OsId windows -Token "$TOKEN" \
+  -Bin booty-call-agent.exe -BoxId <box> -OsId windows -Token "$TOKEN" \
   -BootEntries '{"debian":1,"windows":2}'
 ```
 

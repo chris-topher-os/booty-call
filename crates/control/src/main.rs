@@ -1,4 +1,4 @@
-//! oswitch control plane: node registry, liveness polling, switch state
+//! booty-call control plane: node registry, liveness polling, switch state
 //! machine, and the PWA. Runs on the control machine as a daemon.
 
 mod wol;
@@ -21,7 +21,7 @@ use tokio::sync::RwLock;
 use tower_http::services::ServeDir;
 use tracing::{info, warn};
 
-const DEFAULT_CONFIG_PATH: &str = "~/.config/oswitch/control.json";
+const DEFAULT_CONFIG_PATH: &str = "~/.config/booty-call/control.json";
 const CONTROL_PORT: u16 = 8765;
 const NODE_POLL_SECS: f64 = 3.0;
 const NODE_REQ_TIMEOUT: Duration = Duration::from_secs(2);
@@ -46,7 +46,7 @@ struct Config {
 }
 
 fn default_state_file() -> String {
-    "~/.local/share/oswitch/boxes.json".into()
+    "~/.local/share/booty-call/boxes.json".into()
 }
 fn default_poll() -> f64 {
     NODE_POLL_SECS
@@ -76,7 +76,7 @@ impl Config {
 /// A registered switch node: one per OS partition. The token is stored in
 /// the clear so the control can authenticate to its own agents; the file is
 /// 0600 and lives only on the control machine.
-#[derive(serde::Serialize, serde::Deserialize, Default)]
+#[derive(Default)]
 struct Store {
     /// key: "{box_id}/{os_id}"
     nodes: BTreeMap<String, StoredNode>,
@@ -97,7 +97,9 @@ fn default_node_port() -> u16 {
 impl Store {
     fn load(path: &str) -> Result<Self> {
         match std::fs::read_to_string(path) {
-            Ok(raw) => Ok(serde_json::from_str(&raw).context("parsing state file")?),
+            Ok(raw) => Ok(Store {
+                nodes: serde_json::from_str(&raw).context("parsing state file")?,
+            }),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Store {
                 nodes: BTreeMap::new(),
             }),
@@ -597,7 +599,7 @@ async fn main() -> Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "oswitch_control=info".into()),
+                .unwrap_or_else(|_| "booty_call_control=info".into()),
         )
         .init();
 

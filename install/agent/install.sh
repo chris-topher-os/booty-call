@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Installs the oswitch agent on a Debian switch node (run with sudo).
+# Installs the booty-call agent on a Debian switch node (run with sudo).
 #
 # usage:
 #   sudo ./install.sh \
-#     --bin /path/to/oswitch-agent \
+#     --bin /path/to/booty-call-agent \
 #     --box-id gpu --os-id debian --token <token-from-control> \
 #     --boot-entries '{"debian":1,"windows":2}'
 #
@@ -29,14 +29,14 @@ done
   echo "required: --bin --box-id --os-id --token" >&2; exit 1; }
 command -v efibootmgr >/dev/null || echo "warning: efibootmgr not found (install the 'efibootmgr' package)" >&2
 
-install -D -m 755 "$BIN" /usr/local/bin/oswitch-agent
-mkdir -p /etc/oswitch
+install -D -m 755 "$BIN" /usr/local/bin/booty-call-agent
+mkdir -p /etc/booty-call
 
 PORT_LINE=""
 [[ -n "$PORT" ]] && PORT_LINE=",
   \"port\": $PORT"
 
-cat > /etc/oswitch/agent.json <<EOF
+cat > /etc/booty-call/agent.json <<EOF
 {
   "box_id": "$BOX_ID",
   "os_id": "$OS_ID",
@@ -44,16 +44,16 @@ cat > /etc/oswitch/agent.json <<EOF
   "boot_entries": $ENTRIES$PORT_LINE
 }
 EOF
-chmod 600 /etc/oswitch/agent.json
+chmod 600 /etc/booty-call/agent.json
 
-cat > /etc/systemd/system/oswitch-agent.service <<EOF
+cat > /etc/systemd/system/booty-call-agent.service <<EOF
 [Unit]
-Description=oswitch agent ($BOX_ID/$OS_ID)
+Description=booty-call agent ($BOX_ID/$OS_ID)
 After=network-online.target tailscaled.service
 Wants=network-online.target
 
 [Service]
-ExecStart=/usr/local/bin/oswitch-agent --config /etc/oswitch/agent.json
+ExecStart=/usr/local/bin/booty-call-agent --config /etc/booty-call/agent.json
 Restart=always
 RestartSec=3
 
@@ -62,6 +62,6 @@ WantedBy=multi-user.target
 EOF
 
 systemctl daemon-reload
-systemctl enable --now oswitch-agent.service
-systemctl --no-pager --lines=0 status oswitch-agent.service || true
-echo "installed oswitch-agent for $BOX_ID/$OS_ID"
+systemctl enable --now booty-call-agent.service
+systemctl --no-pager --lines=0 status booty-call-agent.service || true
+echo "installed booty-call-agent for $BOX_ID/$OS_ID"

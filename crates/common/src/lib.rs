@@ -1,4 +1,4 @@
-//! Shared wire types for the oswitch agent and control plane.
+//! Shared wire types for the booty-call agent and control plane.
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};

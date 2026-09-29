@@ -1,6 +1,6 @@
 {
-  "name": "oswitch",
-  "short_name": "oswitch",
+  "name": "booty-call",
+  "short_name": "booty-call",
   "description": "Boot any OS partition on the target box",
   "start_url": "/",
   "display": "standalone",

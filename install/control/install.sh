@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
-# Installs the oswitch control plane as a macOS launchd agent (per-user,
+# Installs the booty-call control plane as a macOS launchd agent (per-user,
 # no sudo). Linux systemd and other platforms: add a path here when needed.
 #
 # usage:
-#   ./install.sh /path/to/oswitch-control            # install + start
+#   ./install.sh /path/to/booty-call-control            # install + start
 #   ./install.sh uninstall                            # stop + remove
 set -euo pipefail
 
-LABEL=dev.chris.oswitch.control
-BIN_DIR="$HOME/.local/share/oswitch"
-CFG_DIR="$HOME/.config/oswitch"
+LABEL=dev.chris.booty-call.control
+BIN_DIR="$HOME/.local/share/booty-call"
+CFG_DIR="$HOME/.config/booty-call"
 CFG="$CFG_DIR/control.json"
-LOG_DIR="$HOME/Library/Logs/oswitch"
+LOG_DIR="$HOME/Library/Logs/booty-call"
 PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
 DOMAIN="gui/$(id -u)"
 
@@ -23,7 +23,7 @@ generate_config() {
 {
   "listen": "",
   "admin_key": "$key",
-  "state_file": "$HOME/.local/share/oswitch/boxes.json",
+  "state_file": "$HOME/.local/share/booty-call/boxes.json",
   "poll_interval_secs": 3,
   "boxes": [
     {
@@ -49,15 +49,15 @@ case "${1:-}" in
   uninstall) uninstall; exit 0;;
 esac
 
-BIN="${1:?usage: install.sh /path/to/oswitch-control | uninstall}"
+BIN="${1:?usage: install.sh /path/to/booty-call-control | uninstall}"
 [[ -x "$BIN" ]] || { echo "binary not found or not executable: $BIN" >&2; exit 1; }
 
 mkdir -p "$BIN_DIR" "$LOG_DIR"
-install -m 755 "$BIN" "$BIN_DIR/oswitch-control"
+install -m 755 "$BIN" "$BIN_DIR/booty-call-control"
 [[ -f "$CFG" ]] || generate_config
 
 # ServeDir resolves "static/" relative to the working directory; expect the
-# binary at <repo>/target/release/oswitch-control.
+# binary at <repo>/target/release/booty-call-control.
 STATIC_DIR="$(cd "$(dirname "$BIN")/../.." 2>/dev/null && pwd)/crates/control/static"
 if [[ ! -d "$STATIC_DIR" ]]; then
   echo "could not find the PWA static dir (expected <repo>/target/release layout)." >&2
@@ -73,7 +73,7 @@ cat > "$PLIST" <<EOF
   <key>Label</key><string>$LABEL</string>
   <key>ProgramArguments</key>
   <array>
-    <string>$BIN_DIR/oswitch-control</string>
+    <string>$BIN_DIR/booty-call-control</string>
     <string>--config</string>
     <string>$CFG</string>
   </array>

@@ -1,4 +1,4 @@
-const CACHE = 'oswitch-v1';
+const CACHE = 'booty-call-v1';
 
 self.addEventListener('install', (e) => self.skipWaiting());
 

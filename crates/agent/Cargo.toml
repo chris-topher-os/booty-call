@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 
 [[bin]]
-name = "oswitch-agent"
+name = "booty-call-agent"
 path = "src/main.rs"
 
 [dependencies]

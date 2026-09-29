@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 
 [[bin]]
-name = "oswitch-control"
+name = "booty-call-control"
 path = "src/main.rs"
 
 [dependencies]
