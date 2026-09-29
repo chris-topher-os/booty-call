@@ -29,6 +29,7 @@ crates/agent     booty-call-agent (tiny_http; systemd on Linux, service on Windo
 crates/control   booty-call-control (axum) + static/ PWA
 install/agent    install-linux.sh (Debian/systemd), install-windows.ps1 (elevated PowerShell)
 install/control  install-macos.sh (macOS launchd agent)
+SPEC.md          the original project spec, verbatim
 ```
 
 ## Building
