@@ -1,0 +1,40 @@
+# Dev environment for booty-call.
+#
+#   mise trust                          # once, per clone
+#   mise bootstrap packages apply       # on the Linux cross box (apt, sudo)
+#   mise run build | agent-linux | agent-windows | build-control | clean
+#
+# The rust toolchain and its cross targets install automatically on first use.
+
+min_version = { soft = "2026.9.4" }
+
+[tools]
+rust = { version = "1.98", postinstall = "rustup target add x86_64-unknown-linux-musl x86_64-pc-windows-gnu" }
+
+[bootstrap]
+# Cross compilers for the agent; only the Linux build box needs them.
+# Apply with: mise bootstrap packages apply
+packages = {
+  "apt:gcc-x86-64-linux-gnu" = { os = "linux", version = "latest" },
+  "apt:gcc-mingw-w64-x86-64" = { os = "linux", version = "latest" },
+}
+
+[tasks.build]
+description = "Release build of all crates for the host"
+run = "cargo build --release"
+
+[tasks.build-control]
+description = "Release build of the control plane (for the macOS daemon)"
+run = "cargo build --release -p control"
+
+[tasks.agent-linux]
+description = "Static x86_64 agent for the Debian partition"
+run = "cargo build --release -p agent --target x86_64-unknown-linux-musl"
+
+[tasks.agent-windows]
+description = "x86_64 agent for the Windows partition"
+run = "cargo build --release -p agent --target x86_64-pc-windows-gnu"
+
+[tasks.clean]
+description = "cargo clean"
+run = "cargo clean"

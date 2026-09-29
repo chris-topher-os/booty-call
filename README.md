@@ -27,10 +27,28 @@ install/agent    install-linux.sh (Debian/systemd), install-windows.ps1 (elevate
 install/control  install-macos.sh (macOS launchd agent)
 ```
 
+## Building
+
+The dev environment is managed by [mise](https://mise.jdx.dev) (`mise.toml`):
+the pinned Rust toolchain and its cross targets install automatically, and the
+apt cross compilers on the Linux build box are declared under `[bootstrap]`.
+
+```sh
+mise trust                        # once, per clone
+mise bootstrap packages apply     # Linux cross box only; installs the apt cross gccs (sudo)
+mise run build                    # host release build
+mise run agent-linux              # static x86_64 agent for the Debian partition
+mise run agent-windows            # x86_64 agent for the Windows partition
+mise run build-control            # control plane for the host
+```
+
+The musl cross build links through `x86_64-linux-gnu-gcc`; that is wired up in
+`.cargo/config.toml`.
+
 ## Control setup (macOS)
 
 ```sh
-make build-control
+mise run build-control
 ./install/control/install-macos.sh target/release/booty-call-control
 ```
 

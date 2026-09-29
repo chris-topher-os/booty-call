@@ -1,0 +1,4 @@
+# The musl x86_64 target links with the glibc cross gcc as a pure linker
+# driver; rust's self-contained musl objects do the rest.
+[target.x86_64-unknown-linux-musl]
+linker = "x86_64-linux-gnu-gcc"
