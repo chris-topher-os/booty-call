@@ -3,8 +3,8 @@
 # no sudo). Linux systemd and other platforms: add a path here when needed.
 #
 # usage:
-#   ./install.sh /path/to/booty-call-control            # install + start
-#   ./install.sh uninstall                            # stop + remove
+#   ./install-macos.sh /path/to/booty-call-control            # install + start
+#   ./install-macos.sh uninstall                            # stop + remove
 set -euo pipefail
 
 LABEL=dev.chris.booty-call.control
@@ -49,7 +49,7 @@ case "${1:-}" in
   uninstall) uninstall; exit 0;;
 esac
 
-BIN="${1:?usage: install.sh /path/to/booty-call-control | uninstall}"
+BIN="${1:?usage: install-macos.sh /path/to/booty-call-control | uninstall}"
 [[ -x "$BIN" ]] || { echo "binary not found or not executable: $BIN" >&2; exit 1; }
 
 mkdir -p "$BIN_DIR" "$LOG_DIR"

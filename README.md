@@ -23,15 +23,15 @@ PWA / curl --tailnet--> control (macOS daemon) --WoL broadcast (LAN)--> box NIC 
 crates/common    wire types + agent config
 crates/agent     booty-call-agent (tiny_http; systemd on Linux, service on Windows)
 crates/control   booty-call-control (axum) + static/ PWA
-install/agent    install.sh (Debian), install.ps1 (Windows)
-install/control  install.sh (macOS launchd agent)
+install/agent    install-linux.sh (Debian/systemd), install-windows.ps1 (elevated PowerShell)
+install/control  install-macos.sh (macOS launchd agent)
 ```
 
 ## Control setup (macOS)
 
 ```sh
 make build-control
-./install/control/install.sh target/release/booty-call-control
+./install/control/install-macos.sh target/release/booty-call-control
 ```
 
 Edits `~/.config/booty-call/control.json`: box id/name, `default_os` (what the
@@ -47,12 +47,12 @@ TOKEN=$(curl -s -X POST -H "Authorization: Bearer $ADMIN_KEY" \
   -d '{"os_id":"debian","ts_ip":"100.x.y.z"}' | jq -r .token)
 
 # Debian partition:
-sudo install/agent/install.sh --bin target/.../booty-call-agent \
+sudo install/agent/install-linux.sh --bin target/.../booty-call-agent \
   --box-id <box> --os-id debian --token "$TOKEN" \
   --boot-entries '{"debian":1,"windows":2}'
 
 # Windows partition (elevated):
-powershell -ExecutionPolicy Bypass -File install/agent/install.ps1 \
+powershell -ExecutionPolicy Bypass -File install/agent/install-windows.ps1 \
   -Bin booty-call-agent.exe -BoxId <box> -OsId windows -Token "$TOKEN" \
   -BootEntries '{"debian":1,"windows":2}'
 ```
@@ -76,7 +76,7 @@ PWA: browse `http://<control-tailnet-ip>:8765/`, enter the admin key.
 - ErP / EuP ready **off** (or the NIC loses S5 power and WoL is dead).
 - Wake-on-PCIe / Power-On-by-NIC **on**.
 - NIC wake enabled in the OS (`ethtool` `Wake-on: g` on Debian, handled by
-  `install.ps1` on Windows; disable Fast Startup on Windows).
+  `install-windows.ps1` on Windows; disable Fast Startup on Windows).
 
 ## Notes
 

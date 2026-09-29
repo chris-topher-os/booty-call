@@ -1,7 +1,7 @@
 # Installs the booty-call agent on a Windows switch node. Run elevated.
 #
 # usage:
-#   powershell -ExecutionPolicy Bypass -File .\install.ps1 `
+#   powershell -ExecutionPolicy Bypass -File .\install-windows.ps1 `
 #     -Bin .\booty-call-agent.exe -BoxId gpu -OsId windows -Token <token-from-control> `
 #     -BootEntries '{"debian":1,"windows":2}'
 #

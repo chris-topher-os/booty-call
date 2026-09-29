@@ -2,7 +2,7 @@
 # Installs the booty-call agent on a Debian switch node (run with sudo).
 #
 # usage:
-#   sudo ./install.sh \
+#   sudo ./install-linux.sh \
 #     --bin /path/to/booty-call-agent \
 #     --box-id gpu --os-id debian --token <token-from-control> \
 #     --boot-entries '{"debian":1,"windows":2}'
