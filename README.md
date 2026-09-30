@@ -20,6 +20,21 @@ for commands.
 
 # Quick Start
 
+## Target box prerequisites
+
+Set the following BIOS configurations:
+
+- ErP / EuP ready: **off**
+- Wake-on-PCIe / Power-On-by-NIC: **on**
+
+Note down the MAC address of the NIC you will wake: it's the NIC on the LAN
+segment where the control machine lives, and it must be the same NIC the agent
+installs WoL on. From the target box:
+
+- Debian: `ip -br link` — the address column is the `link/ether` MAC of each
+  interface (ignore `lo` and `tailscale0`)
+- Windows: `getmac /v` — the Network Address column
+
 ## Control setup
 
 On macOS:
@@ -29,12 +44,11 @@ mise run build-control
 ./install/control/install-macos.sh target/release/booty-call-control
 ```
 
-## Target box prerequisites
-
-Set the following BIOS configurations:
-
-- ErP / EuP ready: **off**
-- Wake-on-PCIe / Power-On-by-NIC: **on**
+The installer writes a config template to `~/.config/booty-call/control.json`
+and the control reads it at startup. Edit it to match your setup: one entry
+per box, `default_os` being the OS the firmware boots on cold start, and
+`wol.mac` the NIC MAC noted in Target box prerequisites. The optional
+`wol.ip` (the box's LAN IP) lets the control also unicast the magic packet.
 
 ## Install an agent
 
