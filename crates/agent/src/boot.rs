@@ -1,6 +1,7 @@
 //! OS-specific boot operations: set the one-shot UEFI BootNext variable,
 //! then reboot. Adding a new target OS means adding a backend here.
 
+#[cfg_attr(target_os = "windows", allow(unused_imports))]
 use anyhow::{Context, Result};
 use std::process::Command;
 
@@ -9,17 +10,30 @@ use std::process::Command;
 pub fn set_bootnext(entry: u16) -> Result<()> {
     #[cfg(target_os = "windows")]
     {
-        let ps = format!(
-            "Set-FirmwareEnvironmentVariable -Name 'BootNext' -Value '{entry:04x}'"
-        );
-        let out = Command::new("powershell.exe")
-            .args(["-NoProfile", "-NonInteractive", "-Command", &ps])
-            .output()
-            .context("running Set-FirmwareEnvironmentVariable")?;
+        // kernel32's SetFirmwareEnvironmentVariableW takes raw bytes, so
+        // BootNext is written as a 4-byte little-endian UINT32, as the
+        // UEFI spec requires.
+        extern "system" {
+            fn SetFirmwareEnvironmentVariableW(
+                name: *const u16,
+                guid: *const u16,
+                value: *const u8,
+                size: u32,
+            ) -> i32;
+            fn GetLastError() -> u32;
+        }
+        let name = "BootNext\0".encode_utf16().collect::<Vec<u16>>();
+        let guid =
+            "{8BE4DF61-93AA-11D2-AA0D-00A0C93EC6F6}\0" // EFI Global Variable namespace
+                .encode_utf16()
+                .collect::<Vec<u16>>();
+        let value = (entry as u32).to_le_bytes();
+        let ok = unsafe {
+            SetFirmwareEnvironmentVariableW(name.as_ptr(), guid.as_ptr(), value.as_ptr(), 4)
+        };
         anyhow::ensure!(
-            out.status.success(),
-            "Set-FirmwareEnvironmentVariable failed: {}",
-            String::from_utf8_lossy(&out.stderr).trim()
+            ok != 0,
+            "SetFirmwareEnvironmentVariableW failed: error {}", unsafe { GetLastError() }
         );
         Ok(())
     }
