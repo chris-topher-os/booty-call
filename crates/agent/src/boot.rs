@@ -25,14 +25,16 @@ pub fn set_bootnext(entry: u16) -> Result<()> {
     }
     #[cfg(all(unix, not(target_os = "windows")))]
     {
+        // efibootmgr parses its -n argument as hex, so pass the entry
+        // number hex-encoded.
+        let arg = format!("{entry:x}");
         let out = Command::new("efibootmgr")
-            .args(["-n", &entry.to_string()])
+            .args(["-n", &arg])
             .output()
             .context("running efibootmgr")?;
         anyhow::ensure!(
             out.status.success(),
-            "efibootmgr -n {} failed: {}",
-            entry,
+            "efibootmgr -n {arg} failed: {}",
             String::from_utf8_lossy(&out.stderr).trim()
         );
         Ok(())

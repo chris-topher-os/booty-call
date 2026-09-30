@@ -87,8 +87,10 @@ powershell -ExecutionPolicy Bypass -File install/agent/install-windows.ps1 \
 `--control` is the control's tailnet FQDN or IP, optionally with `:port`
 (default 8765). Without it, register the node manually via the API instead.
 
-Boot entry numbers come from the firmware boot menu or `sudo efibootmgr -v`.
-The agent needs the full map (it may be asked to reboot into any partition).
+Boot entry numbers come from the firmware boot menu or `sudo efibootmgr -v`
+(the `BootXXXX` number; `XXXX` is hex, so `Boot0010` is 16, written as the
+JSON decimal value). The agent needs the full map (it may be asked to reboot
+into any partition).
 
 ## API
 
