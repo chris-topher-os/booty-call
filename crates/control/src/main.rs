@@ -9,12 +9,12 @@ use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use axum::routing::{delete, get, post};
 use axum::Json;
-use common::{BoxPhase, BoxView, NodeView, RebootRequest, StateResponse, Status, SwitchStage, peer_allowed};
+use common::{BoxPhase, BoxView, NodeView, RebootRequest, StateResponse, Status, SwitchStage};
 use serde::Deserialize;
 use std::collections::{BTreeMap, HashMap};
 use std::net::{IpAddr, SocketAddr};
 use std::process::Command;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tokio::sync::RwLock;
 use tower_http::services::ServeDir;
@@ -35,9 +35,6 @@ struct Config {
     /// e.g. "100.64.0.2:8765". Empty = tailscale IP :8765, fallback 127.0.0.1.
     #[serde(default)]
     listen: String,
-    /// Tailscale node names (short or FQDN) allowed to use the API and the
-    /// PWA. Resolved from the source IP via `tailscale whois`.
-    allowed_peers: Vec<String>,
     #[serde(default = "default_state_file")]
     state_file: String,
     #[serde(default = "default_poll")]
@@ -134,9 +131,6 @@ struct AppState {
     cfg: Arc<Config>,
     rt: Arc<RwLock<Runtime>>,
     client: reqwest::Client,
-    /// source ip -> (allowed, checked_at); whois is expensive-ish, so cache
-    /// for a minute in each direction.
-    peers: Mutex<HashMap<String, (bool, Instant)>>,
 }
 
 impl AppState {
@@ -148,17 +142,6 @@ impl AppState {
         self.cfg.boxes.iter().find(|b| b.id == box_id)
     }
 
-    fn peer_ok(&self, ip: &str) -> bool {
-        const TTL: Duration = Duration::from_secs(60);
-        if let Some((ok, at)) = self.peers.lock().unwrap().get(ip) {
-            if at.elapsed() < TTL {
-                return *ok;
-            }
-        }
-        let ok = peer_allowed(&self.cfg.allowed_peers, ip);
-        self.peers.lock().unwrap().insert(ip.to_string(), (ok, Instant::now()));
-        ok
-    }
 }
 
 // ----------------------------------------------------------------- http
@@ -169,20 +152,7 @@ fn err(status: StatusCode, msg: impl ToString) -> ApiError {
     (status, Json(serde_json::json!({ "error": msg.to_string() })))
 }
 
-/// 403 when the source tailnet node is not in allowed_peers.
-async fn require_peer(
-    st: &Arc<AppState>,
-    ConnectInfo(addr): ConnectInfo<SocketAddr>,
-) -> Result<(), ApiError> {
-    let ip = addr.ip().to_string();
-    if !st.peer_ok(&ip) {
-        return Err(err(StatusCode::FORBIDDEN, "peer not allowed"));
-    }
-    Ok(())
-}
-
-async fn get_state(State(st): State<Arc<AppState>>, ci: ConnectInfo<SocketAddr>) -> Result<impl IntoResponse, ApiError> {
-    require_peer(&st, ci).await?;
+async fn get_state(State(st): State<Arc<AppState>>) -> Result<impl IntoResponse, ApiError> {
     let rt = st.rt.read().await;
     let boxes = st
         .cfg
@@ -225,10 +195,9 @@ struct RegisterReq {
     port: u16,
 }
 
-/// Idempotent upsert. Callers are either a node in `allowed_peers`
-/// (registers any node) or the node itself: agents self-register at startup
-/// by claiming their own tailnet source IP as `ts_ip`, which the control
-/// then trusts and ignores the body value for.
+/// Idempotent upsert. Nodes self-register at startup by claiming their own
+/// tailnet source IP as `ts_ip`; the control trusts the source address and
+/// ignores the body value for.
 async fn register_node(
     State(st): State<Arc<AppState>>,
     ci: ConnectInfo<SocketAddr>,
@@ -236,20 +205,21 @@ async fn register_node(
     Json(req): Json<RegisterReq>,
 ) -> Result<impl IntoResponse, ApiError> {
     let ip = ci.0.ip().to_string();
-    let self_reg = req.ts_ip == ip;
-    if !st.peer_ok(&ip) && !self_reg {
-        return Err(err(StatusCode::FORBIDDEN, "peer not allowed"));
+    if req.ts_ip != ip {
+        return Err(err(
+            StatusCode::FORBIDDEN,
+            "ts_ip must match the caller's tailnet address",
+        ));
     }
-    let ts_ip = if self_reg { ip } else { req.ts_ip.clone() };
     if st.find_box(&box_id).is_none() {
         return Err(err(StatusCode::NOT_FOUND, format!("unknown box {box_id:?}")));
     }
-    if req.os_id.is_empty() || ts_ip.parse::<IpAddr>().is_err() {
-        return Err(err(StatusCode::BAD_REQUEST, "os_id and a valid ts_ip are required"));
+    if req.os_id.is_empty() {
+        return Err(err(StatusCode::BAD_REQUEST, "os_id is required"));
     }
     let mut rt = st.rt.write().await;
     let key = AppState::node_key(&box_id, &req.os_id);
-    let node = StoredNode { ts_ip, port: req.port };
+    let node = StoredNode { ts_ip: ip, port: req.port };
     if rt.store.nodes.get(&key) != Some(&node) {
         rt.store.nodes.insert(key.clone(), node);
         rt.store.save(&st.cfg.state_file)
@@ -261,10 +231,8 @@ async fn register_node(
 
 async fn unregister_node(
     State(st): State<Arc<AppState>>,
-    ci: ConnectInfo<SocketAddr>,
     Path((box_id, os_id)): Path<(String, String)>,
 ) -> Result<impl IntoResponse, ApiError> {
-    require_peer(&st, ci).await?;
     let mut rt = st.rt.write().await;
     let key = AppState::node_key(&box_id, &os_id);
     if rt.store.nodes.remove(&key).is_none() {
@@ -284,11 +252,9 @@ struct SwitchReq {
 
 async fn do_switch_api(
     State(st): State<Arc<AppState>>,
-    ci: ConnectInfo<SocketAddr>,
     Path(box_id): Path<String>,
     Json(req): Json<SwitchReq>,
 ) -> Result<impl IntoResponse, ApiError> {
-    require_peer(&st, ci).await?;
     if st.find_box(&box_id).is_none() {
         return Err(err(StatusCode::NOT_FOUND, format!("unknown box {box_id:?}")));
     }
@@ -624,12 +590,11 @@ async fn main() -> Result<()> {
         last_seen: HashMap::new(),
         phase: HashMap::new(),
     }));
-    let peers = Mutex::new(HashMap::new());
     let client = reqwest::Client::builder()
         .timeout(NODE_REQ_TIMEOUT)
         .build()
         .context("building http client")?;
-    let st = Arc::new(AppState { cfg: Arc::clone(&cfg), rt, client, peers });
+    let st = Arc::new(AppState { cfg: Arc::clone(&cfg), rt, client });
 
     tokio::spawn(poller(Arc::clone(&st)));
 

@@ -20,7 +20,6 @@ generate_config() {
   cat > "$CFG" <<EOF
 {
   "listen": "",
-  "allowed_peers": ["<tailscale node names allowed to use the API and PWA, e.g. fabrico>"],
   "state_file": "$HOME/.local/share/booty-call/boxes.json",
   "poll_interval_secs": 3,
   "boxes": [
@@ -33,7 +32,7 @@ generate_config() {
   ]
 }
 EOF
-  echo "wrote config template to $CFG — fill in allowed_peers and the boxes"
+  echo "wrote config template to $CFG — fill in the boxes"
 }
 
 uninstall() {

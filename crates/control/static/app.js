@@ -2,18 +2,13 @@ const $ = (s) => document.querySelector(s);
 
 let polling = false;
 
-// Access is enforced by the control: the source tailnet node (resolved via
-// `tailscale whois`) must be in its allowed_peers. No app-level token.
+// Access = tailnet membership: the control listens on the tailnet only, so
+// any tailnet node may use the API and PWA. No app-level token.
 async function api(path, opts = {}) {
-  const res = await fetch('/api' + path, {
+  return fetch('/api' + path, {
     ...opts,
     headers: opts.body ? { 'Content-Type': 'application/json' } : {},
   });
-  if (res.status === 403) {
-    document.title = 'booty-call (not allowed)';
-    throw new Error('peer not allowed');
-  }
-  return res;
 }
 
 function el(tag, attrs = {}, ...children) {
