@@ -52,15 +52,6 @@ per box, `default_os` being the OS the firmware boots on cold start, and
 
 ## Install an agent
 
-The install scripts also handle the OS-side Wake on LAN prerequisites:
-
-- Debian: enables magic-packet WoL (`ethtool -s <iface> wol g`) and persists
-  it across reboots via `booty-call-wol.service`. Pass `--wol-iface <iface>`
-  to pick the NIC; without it, the script auto-detects it when there is
-  exactly one physical (PCI-backed) Ethernet interface.
-- Windows: disables Fast Startup (`HiberbootEnabled=0`) so that shutdown is
-  a real shutdown.
-
 Replace `<control-address>` with the Tailnet FQDN of the control node.
 
 To get boot entry numbers, run `sudo efibootmgr -v` and look for `BootXXXX`
