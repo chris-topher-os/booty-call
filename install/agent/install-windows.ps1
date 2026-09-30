@@ -14,6 +14,10 @@
 #
 # -BootEntries maps every os_id this box can boot to its UEFI boot entry
 # number (visible in the firmware boot menu, or `efibootmgr -v` from Linux).
+#
+# Also disables Fast Startup (HiberbootEnabled=0, the same registry value
+# the 'Turn on fast startup' Control Panel checkbox sets), so shutdown is a
+# full shutdown — required for the Wake on LAN flow.
 param(
   [Parameter(Mandatory)] [string] $Bin,
   [Parameter(Mandatory)] [string] $BoxId,
@@ -59,6 +63,11 @@ if ($LASTEXITCODE -eq 0) {
 }
 sc.exe create bootycallagent binPath= "`"$exe`" --config `"$cfgPath`"" start= auto | Out-Null
 sc.exe description bootycallagent "booty-call agent ($BoxId/$OsId)" | Out-Null
+# Disable Fast Startup so 'shutdown' powers the box fully off (needed for WoL).
+$hiberPath = 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Power'
+Set-ItemProperty -Path $hiberPath -Name HiberbootEnabled -Value 0
+Write-Host 'disabled Fast Startup (HiberbootEnabled=0)'
+
 Start-Service bootycallagent
 if (-not $Control) { Write-Warning 'no -Control given; the agent will not self-register (register the node manually)' }
 Write-Host "installed booty-call-agent service for $BoxId/$OsId"

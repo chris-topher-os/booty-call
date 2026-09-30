@@ -36,12 +36,16 @@ Set the following BIOS configurations:
 - ErP / EuP ready: **off**
 - Wake-on-PCIe / Power-On-by-NIC: **on**
 
-also: (TODO: can these be automated?)
-
-- `ethtool` `Wake-on: g` on Debian
-- disable Fast Startup on Windows
-
 ## Install an agent
+
+The install scripts also handle the OS-side Wake on LAN prerequisites:
+
+- Debian: enables magic-packet WoL (`ethtool -s <iface> wol g`) and persists
+  it across reboots via `booty-call-wol.service`. Pass `--wol-iface <iface>`
+  to pick the NIC; without it, the script auto-detects it when there is
+  exactly one physical (PCI-backed) Ethernet interface.
+- Windows: disables Fast Startup (`HiberbootEnabled=0`) so that shutdown is
+  a real shutdown.
 
 Replace `<control-address>` with the Tailnet FQDN of the control node.
 
