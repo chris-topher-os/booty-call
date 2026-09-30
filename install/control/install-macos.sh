@@ -49,7 +49,7 @@ esac
 BIN="${1:?usage: install-macos.sh /path/to/booty-call-control | uninstall}"
 [[ -x "$BIN" ]] || { echo "binary not found or not executable: $BIN" >&2; exit 1; }
 
-mkdir -p "$BIN_DIR" "$LOG_DIR"
+mkdir -p "$BIN_DIR" "$LOG_DIR" "$(dirname "$PLIST")"
 install -m 755 "$BIN" "$BIN_DIR/booty-call-control"
 [[ -f "$CFG" ]] || generate_config
 
