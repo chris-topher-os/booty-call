@@ -8,10 +8,11 @@
 
 mod boot;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use common::{AgentConfig, RebootRequest, Status, whois_node};
 use std::collections::HashMap;
-use std::net::IpAddr;
+use std::io::{Read, Write};
+use std::net::{IpAddr, ToSocketAddrs, TcpStream};
 use std::process::Command;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -134,6 +135,12 @@ fn run_agent() -> Result<()> {
         cfg.box_id, cfg.os_id, server.server_addr(), cfg.allowed_peers
     );
 
+    if let Some(control) = cfg.control.clone() {
+        let cfg = Arc::clone(&cfg);
+        let status = Arc::clone(&status);
+        std::thread::spawn(move || register_loop(cfg, control, status));
+    }
+
     for request in server.incoming_requests() {
         let cfg = Arc::clone(&cfg);
         let status = Arc::clone(&status);
@@ -211,6 +218,55 @@ fn handle(
 
     let header = Header::from_bytes(&b"Content-Type"[..], &b"application/json"[..]).unwrap();
     let _ = request.respond(Response::from_string(body).with_status_code(code).with_header(header));
+}
+
+/// Registers this agent with the control and keeps retrying until it
+/// succeeds: the control may not be reachable yet at install/boot time, and
+/// re-registration also heals a node entry that was deleted from the control.
+fn register_loop(cfg: Arc<AgentConfig>, control: String, status: Arc<Status>) {
+    const RETRY: Duration = Duration::from_secs(60);
+    loop {
+        match post_register(&control, &cfg, &status) {
+            Ok(()) => {
+                println!("booty-call-agent: registered with control at {control}");
+                return;
+            }
+            Err(e) => eprintln!("booty-call-agent: registering with {control}: {e:#}; retrying"),
+        }
+        std::thread::sleep(RETRY);
+    }
+}
+
+fn post_register(control: &str, cfg: &AgentConfig, status: &Status) -> Result<()> {
+    if status.ts_ip.is_empty() {
+        anyhow::bail!("no tailscale IPv4 yet");
+    }
+    let (host, port) = match control.rsplit_once(':') {
+        Some((h, p)) => (h.to_string(), p.parse::<u16>().context("invalid control port")?),
+        None => (control.to_string(), 8765),
+    };
+    let mut addrs = (host.as_str(), port)
+        .to_socket_addrs()
+        .with_context(|| format!("resolving control host {host}"))?;
+    let addr = addrs.next().context("no address for control host")?;
+    let body = serde_json::json!({ "os_id": cfg.os_id, "ts_ip": status.ts_ip, "port": cfg.port }).to_string();
+    let path = format!("/api/boxes/{}/nodes", cfg.box_id);
+    let mut sock =
+        TcpStream::connect_timeout(&addr, Duration::from_secs(5)).with_context(|| format!("connecting to {addr}"))?;
+    sock.set_read_timeout(Some(Duration::from_secs(5))).ok();
+    let req = format!(
+        "POST {path} HTTP/1.1\r\nHost: {host}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+        body.len()
+    );
+    sock.write_all(req.as_bytes())?;
+    let mut resp = String::new();
+    sock.read_to_string(&mut resp)?;
+    let first = resp.lines().next().unwrap_or_default();
+    if first.contains(" 200") {
+        Ok(())
+    } else {
+        anyhow::bail!("control responded: {first} {}", resp.lines().nth(1).unwrap_or_default())
+    }
 }
 
 /// Sets BootNext for `os` and reboots. Does not return on success.

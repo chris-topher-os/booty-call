@@ -80,7 +80,7 @@ struct Store {
     nodes: BTreeMap<String, StoredNode>,
 }
 
-#[derive(serde::Serialize, serde::Deserialize, Clone)]
+#[derive(serde::Serialize, serde::Deserialize, Clone, PartialEq)]
 struct StoredNode {
     ts_ip: String,
     #[serde(default = "default_node_port")]
@@ -225,30 +225,37 @@ struct RegisterReq {
     port: u16,
 }
 
+/// Idempotent upsert. Callers are either a node in `allowed_peers`
+/// (registers any node) or the node itself: agents self-register at startup
+/// by claiming their own tailnet source IP as `ts_ip`, which the control
+/// then trusts and ignores the body value for.
 async fn register_node(
     State(st): State<Arc<AppState>>,
     ci: ConnectInfo<SocketAddr>,
     Path(box_id): Path<String>,
     Json(req): Json<RegisterReq>,
 ) -> Result<impl IntoResponse, ApiError> {
-    require_peer(&st, ci).await?;
+    let ip = ci.0.ip().to_string();
+    let self_reg = req.ts_ip == ip;
+    if !st.peer_ok(&ip) && !self_reg {
+        return Err(err(StatusCode::FORBIDDEN, "peer not allowed"));
+    }
+    let ts_ip = if self_reg { ip } else { req.ts_ip.clone() };
     if st.find_box(&box_id).is_none() {
         return Err(err(StatusCode::NOT_FOUND, format!("unknown box {box_id:?}")));
     }
-    if req.os_id.is_empty() || req.ts_ip.parse::<IpAddr>().is_err() {
+    if req.os_id.is_empty() || ts_ip.parse::<IpAddr>().is_err() {
         return Err(err(StatusCode::BAD_REQUEST, "os_id and a valid ts_ip are required"));
     }
     let mut rt = st.rt.write().await;
     let key = AppState::node_key(&box_id, &req.os_id);
-    if rt.store.nodes.contains_key(&key) {
-        return Err(err(StatusCode::CONFLICT, "node already registered"));
+    let node = StoredNode { ts_ip, port: req.port };
+    if rt.store.nodes.get(&key) != Some(&node) {
+        rt.store.nodes.insert(key.clone(), node);
+        rt.store.save(&st.cfg.state_file)
+            .map_err(|e| err(StatusCode::INTERNAL_SERVER_ERROR, format!("saving state: {e}")))?;
+        info!(%key, "registered node");
     }
-    rt.store.nodes.insert(key.clone(), StoredNode {
-        ts_ip: req.ts_ip,
-        port: req.port,
-    });
-    rt.store.save(&st.cfg.state_file).map_err(|e| err(StatusCode::INTERNAL_SERVER_ERROR, format!("saving state: {e}")))?;
-    info!(%key, "registered node");
     Ok(Json(serde_json::json!({ "os_id": req.os_id })))
 }
 

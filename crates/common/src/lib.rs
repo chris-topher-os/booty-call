@@ -79,6 +79,12 @@ pub struct AgentConfig {
     pub boot_entries: BTreeMap<String, u16>,
     #[serde(default = "default_port")]
     pub port: u16,
+    /// Control plane address (`host:port`, or `host` for the default port
+    /// 8765). Host may be a tailnet FQDN or IP. When set, the agent
+    /// registers itself with the control at startup; when absent, the node
+    /// must be registered externally.
+    #[serde(default)]
+    pub control: Option<String>,
 }
 
 /// Identify a tailnet IP: `(short_name, fqdn)`, e.g.

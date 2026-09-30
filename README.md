@@ -62,30 +62,30 @@ names of the devices allowed to use the API/PWA), box id/name, `default_os`
 (what the firmware boots on cold start), and WoL MAC (and optional LAN IP).
 Logs: `~/Library/Logs/booty-call/`.
 
-## Register a node + install an agent
+## Install an agent
 
-From a device whose node name is in the control's `allowed_peers`, once per OS
-(ts_ip from `tailscale ip -4` on the partition):
-
-```sh
-curl -s -X POST http://<control>:8765/api/boxes/<box>/nodes \
-  -H 'Content-Type: application/json' \
-  -d '{"os_id":"debian","ts_ip":"100.x.y.z"}'
-```
-
-Then install the agent on the partition:
+Registration is automatic: with `--control` set, the agent registers itself
+with the control at startup (self-registration: the control trusts the
+request's tailnet source IP as the node's address). It retries every minute
+until the control answers, and re-registration is idempotent, so a missing
+control at install time or a deleted registry entry heals itself.
 
 ```sh
 # Debian partition:
 sudo install/agent/install-linux.sh --bin target/.../booty-call-agent \
   --box-id <box> --os-id debian --allowed-peers <control-node-name> \
+  --control <control-tailnet-fqdn> \
   --boot-entries '{"debian":1,"windows":2}'
 
 # Windows partition (elevated):
 powershell -ExecutionPolicy Bypass -File install/agent/install-windows.ps1 \
   -Bin booty-call-agent.exe -BoxId <box> -OsId windows -AllowedPeers <control-node-name> \
+  -Control <control-tailnet-fqdn> \
   -BootEntries '{"debian":1,"windows":2}'
 ```
+
+`--control` is the control's tailnet FQDN or IP, optionally with `:port`
+(default 8765). Without it, register the node manually via the API instead.
 
 Boot entry numbers come from the firmware boot menu or `sudo efibootmgr -v`.
 The agent needs the full map (it may be asked to reboot into any partition).
@@ -98,8 +98,12 @@ to a node in the control's `allowed_peers`.
 | method | path | body | result |
 |---|---|---|---|
 | GET | `/api/state` | – | boxes, per-node liveness, switch phase |
-| POST | `/api/boxes/:id/nodes` | `{"os_id","ts_ip","port"?}` | `{"os_id"}` |
+| POST | `/api/boxes/:id/nodes` | `{"os_id","ts_ip","port"?}` | `{"os_id"}`; idempotent upsert |
 | DELETE | `/api/boxes/:id/nodes/:os` | – | unregister |
+
+`POST .../nodes` accepts two callers: a node in `allowed_peers` (may register
+any node) or the node itself — agents self-register at startup by claiming
+their own tailnet source IP as `ts_ip`, which the control then uses verbatim.
 | POST | `/api/boxes/:id/switch` | `{"os"}` | 202 accepted / 409 already switching or stuck |
 
 PWA: browse `http://<control-tailnet-ip>:8765/` from a browser on an allowed

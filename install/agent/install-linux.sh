@@ -5,17 +5,22 @@
 #   sudo ./install-linux.sh \
 #     --bin /path/to/booty-call-agent \
 #     --box-id gpu --os-id debian --allowed-peers fabrico \
+#     --control fabrico.tawny-wyrm.ts.net \
 #     --boot-entries '{"debian":1,"windows":2}'
 #
 # --allowed-peers: tailscale node name(s) of the control (and any other
 # peers that may talk to this agent), comma-separated.
+#
+# --control: address of the control plane (tailnet FQDN or IP, optional
+# :port, default 8765). With it, the agent registers itself with the
+# control at startup; without it, register the node manually.
 #
 # --boot-entries maps every os_id this box can boot to its UEFI boot entry
 # number (from `sudo efibootmgr -v`). The agent needs the full map because
 # it may be asked to reboot into any of the other partitions.
 set -euo pipefail
 
-BIN="" BOX_ID="" OS_ID="" PEERS="" PORT="" ENTRIES='{}'
+BIN="" BOX_ID="" OS_ID="" PEERS="" PORT="" ENTRIES='{}' CONTROL=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --bin) BIN="$2"; shift 2;;
@@ -24,6 +29,7 @@ while [[ $# -gt 0 ]]; do
     --allowed-peers) PEERS="$2"; shift 2;;
     --port) PORT="$2"; shift 2;;
     --boot-entries) ENTRIES="$2"; shift 2;;
+    --control) CONTROL="$2"; shift 2;;
     *) echo "unknown arg: $1" >&2; exit 1;;
   esac
 done
@@ -39,13 +45,16 @@ mkdir -p /etc/booty-call
 PORT_LINE=""
 [[ -n "$PORT" ]] && PORT_LINE=",
   \"port\": $PORT"
+CONTROL_LINE=""
+[[ -n "$CONTROL" ]] && CONTROL_LINE=",
+  \"control\": \"$CONTROL\""
 
 cat > /etc/booty-call/agent.json <<EOF
 {
   "box_id": "$BOX_ID",
   "os_id": "$OS_ID",
   "allowed_peers": $PEERS_JSON,
-  "boot_entries": $ENTRIES$PORT_LINE
+  "boot_entries": $ENTRIES$PORT_LINE$CONTROL_LINE
 }
 EOF
 
@@ -67,4 +76,7 @@ EOF
 systemctl daemon-reload
 systemctl enable --now booty-call-agent.service
 systemctl --no-pager --lines=0 status booty-call-agent.service || true
+if [[ -z "$CONTROL" ]]; then
+  echo "warning: no --control given; the agent will not self-register (register the node manually)" >&2
+fi
 echo "installed booty-call-agent for $BOX_ID/$OS_ID"
