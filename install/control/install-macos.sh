@@ -55,8 +55,9 @@ mkdir -p "$BIN_DIR" "$LOG_DIR" "$(dirname "$PLIST")"
 install -m 755 "$BIN" "$BIN_DIR/booty-call-control"
 [[ -f "$CFG" ]] || generate_config
 
-# ServeDir resolves "static/" relative to the working directory; expect the
-# binary at <repo>/target/release/booty-call-control.
+# ServeDir resolves "static/" relative to the working directory, so the
+# working directory is crates/control (the parent of the static dir). Expect
+# the binary at <repo>/target/release/booty-call-control.
 STATIC_DIR="$(cd "$(dirname "$BIN")/../.." 2>/dev/null && pwd)/crates/control/static"
 if [[ ! -d "$STATIC_DIR" ]]; then
   echo "could not find the PWA static dir (expected <repo>/target/release layout)." >&2
@@ -76,7 +77,7 @@ cat > "$PLIST" <<EOF
     <string>--config</string>
     <string>$CFG</string>
   </array>
-  <key>WorkingDirectory</key><string>$STATIC_DIR</string>
+  <key>WorkingDirectory</key><string>$(dirname "$STATIC_DIR")</string>
   <key>EnvironmentVariables</key>
   <dict>
     <key>PATH</key>
