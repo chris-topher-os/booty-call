@@ -50,6 +50,10 @@ per box, `default_os` being the OS the firmware boots on cold start, and
 `wol.mac` the NIC MAC noted in Target box prerequisites. The optional
 `wol.ip` (the box's LAN IP) lets the control also unicast the magic packet.
 
+For HTTPS on the tailnet FQDN, run `tailscale serve --bg 8765` on the control
+node (it walks you through enabling tailnet HTTPS certificates if needed);
+the PWA is then also at `https://<control-tailnet-fqdn>`.
+
 ## Install an agent
 
 Replace `<control-address>` with the Tailnet FQDN of the control node.
