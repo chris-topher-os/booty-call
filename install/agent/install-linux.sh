@@ -101,6 +101,8 @@ systemctl daemon-reload
 systemctl enable --now booty-call-wol.service
 echo "enabled Wake-on-LAN (magic packet) on $WOL_IFACE, persisted via booty-call-wol.service"
 
+# Stop a running agent first so its binary can be replaced (reinstalling).
+systemctl stop booty-call-agent 2>/dev/null || true
 install -D -m 755 "$BIN" /usr/local/bin/booty-call-agent
 mkdir -p /etc/booty-call
 

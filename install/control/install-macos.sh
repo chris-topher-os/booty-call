@@ -48,6 +48,9 @@ esac
 BIN="${1:?usage: install-macos.sh /path/to/booty-call-control | uninstall}"
 [[ -x "$BIN" ]] || { echo "binary not found or not executable: $BIN" >&2; exit 1; }
 
+# Stop a running control first so its binary can be replaced (reinstalling).
+launchctl bootout "$DOMAIN/$LABEL" 2>/dev/null || true
+
 mkdir -p "$BIN_DIR" "$LOG_DIR" "$(dirname "$PLIST")"
 install -m 755 "$BIN" "$BIN_DIR/booty-call-control"
 [[ -f "$CFG" ]] || generate_config
@@ -87,7 +90,6 @@ cat > "$PLIST" <<EOF
 </plist>
 EOF
 
-launchctl bootout "$DOMAIN/$LABEL" 2>/dev/null || true
 launchctl bootstrap "$DOMAIN" "$PLIST"
 launchctl print "$DOMAIN/$LABEL" | head -5
 echo "installed $LABEL (config: $CFG, logs: $LOG_DIR)"

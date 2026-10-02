@@ -39,6 +39,12 @@ try { $null = $BootEntries | ConvertFrom-Json } catch { throw "bad -BootEntries 
 $binDir = 'C:\Program Files\booty-call'
 $cfgDir = 'C:\ProgramData\booty-call'
 New-Item -ItemType Directory -Force -Path $binDir, $cfgDir | Out-Null
+# Stop a running agent first so its binary can be replaced (reinstalling).
+sc.exe query bootycallagent 2>$null | Out-Null
+if ($LASTEXITCODE -eq 0) {
+  sc.exe stop bootycallagent | Out-Null
+  sc.exe delete bootycallagent | Out-Null
+}
 Copy-Item $Bin (Join-Path $binDir 'booty-call-agent.exe') -Force
 
 $peersJson = ($AllowedPeers -split ',' | Where-Object { $_.Trim() }) | ForEach-Object { '"' + $_.Trim() + '"' } -join ', '
@@ -56,11 +62,6 @@ Set-Content -Path (Join-Path $cfgDir 'agent.json') -Value $cfg -Encoding ascii
 
 $exe = Join-Path $binDir 'booty-call-agent.exe'
 $cfgPath = Join-Path $cfgDir 'agent.json'
-sc.exe query bootycallagent 2>$null | Out-Null
-if ($LASTEXITCODE -eq 0) {
-  sc.exe stop bootycallagent | Out-Null
-  sc.exe delete bootycallagent | Out-Null
-}
 sc.exe create bootycallagent binPath= "`"$exe`" --config `"$cfgPath`"" start= auto | Out-Null
 sc.exe description bootycallagent "booty-call agent ($BoxId/$OsId)" | Out-Null
 # Disable Fast Startup so 'shutdown' powers the box fully off (needed for WoL).
