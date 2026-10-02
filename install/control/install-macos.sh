@@ -55,16 +55,8 @@ mkdir -p "$BIN_DIR" "$LOG_DIR" "$(dirname "$PLIST")"
 install -m 755 "$BIN" "$BIN_DIR/booty-call-control"
 [[ -f "$CFG" ]] || generate_config
 
-# ServeDir resolves "static/" relative to the working directory, so the
-# working directory is crates/control (the parent of the static dir). Expect
-# the binary at <repo>/target/release/booty-call-control.
-STATIC_DIR="$(cd "$(dirname "$BIN")/../.." 2>/dev/null && pwd)/crates/control/static"
-if [[ ! -d "$STATIC_DIR" ]]; then
-  echo "could not find the PWA static dir (expected <repo>/target/release layout)." >&2
-  echo "build from the repo root: cargo build --release -p control" >&2
-  exit 1
-fi
-
+# The PWA is embedded in the binary, so no static dir or working directory is
+# needed; the binary can live anywhere.
 cat > "$PLIST" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -77,7 +69,6 @@ cat > "$PLIST" <<EOF
     <string>--config</string>
     <string>$CFG</string>
   </array>
-  <key>WorkingDirectory</key><string>$(dirname "$STATIC_DIR")</string>
   <key>EnvironmentVariables</key>
   <dict>
     <key>PATH</key>

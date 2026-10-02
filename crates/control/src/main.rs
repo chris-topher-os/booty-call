@@ -5,7 +5,7 @@ mod wol;
 
 use anyhow::{Context, Result};
 use axum::extract::{ConnectInfo, Path, State};
-use axum::http::StatusCode;
+use axum::http::{StatusCode, Uri};
 use axum::response::IntoResponse;
 use axum::routing::{delete, get, post};
 use axum::Json;
@@ -17,7 +17,6 @@ use std::process::Command;
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tokio::sync::RwLock;
-use tower_http::services::ServeDir;
 use tracing::{info, warn};
 
 const DEFAULT_CONFIG_PATH: &str = "~/.config/booty-call/control.json";
@@ -563,6 +562,36 @@ fn config_path() -> String {
     expand_home(DEFAULT_CONFIG_PATH)
 }
 
+// --------------------------------------------------------------- the PWA
+
+/// The PWA, embedded at build time so the binary serves it from anywhere
+/// with no dependency on a static dir or the working directory.
+static STATIC: include_dir::Dir = include_dir::include_dir!("$CARGO_MANIFEST_DIR/static");
+
+async fn serve_pwa(uri: Uri) -> impl IntoResponse {
+    let path = uri.path().trim_start_matches('/');
+    let path = if path.is_empty() { "index.html" } else { path };
+    match STATIC.get_file(path) {
+        Some(file) => (
+            [(axum::http::header::CONTENT_TYPE, pwa_content_type(file.path()))],
+            file.contents(),
+        )
+            .into_response(),
+        None => (StatusCode::NOT_FOUND, "not found").into_response(),
+    }
+}
+
+fn pwa_content_type(path: &std::path::Path) -> &'static str {
+    match path.extension().and_then(|e| e.to_str()).unwrap_or_default() {
+        "html" => "text/html; charset=utf-8",
+        "js" => "text/javascript",
+        "svg" => "image/svg+xml",
+        "webmanifest" => "application/manifest+json",
+        "ico" => "image/x-icon",
+        _ => "application/octet-stream",
+    }
+}
+
 fn tailscale_ip4() -> Option<IpAddr> {
     let out = Command::new("tailscale").args(["ip", "-4"]).output().ok()?;
     let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
@@ -603,7 +632,7 @@ async fn main() -> Result<()> {
         .route("/api/boxes/:box_id/nodes", post(register_node))
         .route("/api/boxes/:box_id/nodes/:os_id", delete(unregister_node))
         .route("/api/boxes/:box_id/switch", post(do_switch_api))
-        .fallback_service(ServeDir::new("static"))
+        .fallback(serve_pwa)
         .with_state(st);
 
     let addr = if cfg.listen.is_empty() {
