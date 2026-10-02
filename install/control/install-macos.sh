@@ -74,6 +74,11 @@ cat > "$PLIST" <<EOF
     <string>$CFG</string>
   </array>
   <key>WorkingDirectory</key><string>$STATIC_DIR</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/opt/homebrew/sbin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+  </dict>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
   <key>StandardOutPath</key><string>$LOG_DIR/control.out</string>

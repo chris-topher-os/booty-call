@@ -11,7 +11,7 @@ PWA --tailnet--> control --LAN--> Wake on LAN
 - **agent** (`crates/agent`): runs on every OS partition, allowing the
   control to issue reboot commands and query liveness.
 - **control** (`crates/control`): remote-control interface with a PWA
-  frontend.
+  frontend at `http://<control-tailnet-fqdn>:8765`.
 
 ## Developing
 
