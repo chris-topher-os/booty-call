@@ -3,7 +3,7 @@
 
 mod wol;
 
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use axum::extract::{ConnectInfo, Path, State};
 use axum::http::{StatusCode, Uri};
 use axum::response::IntoResponse;
@@ -642,7 +642,7 @@ async fn main() -> Result<()> {
         let mut v = vec![format!("127.0.0.1:{CONTROL_PORT}")];
         match tailscale_ip4() {
             Some(ip) => v.push(format!("{ip}:{CONTROL_PORT}")),
-            None => warn!("no tailscale IPv4 found; agents cannot reach the control until tailscale is up (set listen in config to override)"),
+            None => bail!("no tailscale IPv4 found; agents cannot reach the control. Start tailscale and restart, or set 'listen' in the config"),
         };
         v
     } else {
