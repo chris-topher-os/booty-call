@@ -635,25 +635,46 @@ async fn main() -> Result<()> {
         .fallback(serve_pwa)
         .with_state(st);
 
-    let addr = if cfg.listen.is_empty() {
+    // Listen on localhost (so `tailscale serve` can proxy to it; serve
+    // cannot proxy to the node's own tailscale IP) plus the tailscale IP
+    // (so agents can register directly on the FQDN).
+    let addrs: Vec<String> = if cfg.listen.is_empty() {
+        let mut v = vec![format!("127.0.0.1:{CONTROL_PORT}")];
         match tailscale_ip4() {
-            Some(ip) => format!("{ip}:{CONTROL_PORT}"),
-            None => {
-                warn!("no tailscale IPv4 found; listening on 127.0.0.1:{CONTROL_PORT} (set listen in config to expose on the tailnet)");
-                format!("127.0.0.1:{CONTROL_PORT}")
-            }
-        }
+            Some(ip) => v.push(format!("{ip}:{CONTROL_PORT}")),
+            None => warn!("no tailscale IPv4 found; agents cannot reach the control until tailscale is up (set listen in config to override)"),
+        };
+        v
     } else {
-        cfg.listen.clone()
+        vec![cfg.listen.clone()]
     };
-    let listener = tokio::net::TcpListener::bind(&addr)
-        .await
-        .with_context(|| format!("binding to {addr}"))?;
-    info!(%addr, "control plane listening");
-    axum::serve(
-        listener,
-        app.into_make_service_with_connect_info::<SocketAddr>(),
-    )
-    .await?;
+    let mut listeners = Vec::new();
+    for addr in &addrs {
+        let listener = tokio::net::TcpListener::bind(addr)
+            .await
+            .with_context(|| format!("binding to {addr}"))?;
+        info!(%addr, "control plane listening");
+        listeners.push(listener);
+    }
+    let handles: Vec<_> = listeners
+        .into_iter()
+        .map(|listener| {
+            let app = app.clone();
+            tokio::spawn(async move {
+                axum::serve(
+                    listener,
+                    app.into_make_service_with_connect_info::<SocketAddr>(),
+                )
+                .await
+            })
+        })
+        .collect();
+    let mut err = None;
+    for h in handles {
+        if let Ok(Err(e)) = h.await {
+            err = Some(e);
+        }
+    }
+    err.with_context(|| "http server exited")?;
     Ok(())
 }
