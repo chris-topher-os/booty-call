@@ -27,6 +27,82 @@ run = "cargo build --release"
 description = "Release build of the control plane (for the macOS daemon)"
 run = "cargo build --release -p control"
 
+[tasks.deploy]
+description = "Rebuild, install, and restart the booty-call component for this machine. Re-deploys reuse the installed config; a first agent install reads values from .env (see .env.example)"
+shell = "bash -c"
+run = '''
+set -euo pipefail
+case "$(uname -s)" in
+  Darwin)
+    # control (launchd). The installer keeps an existing control.json and
+    # writes a template only on first install.
+    mise run build-control
+    install/control/install-macos.sh target/release/booty-call-control
+    ;;
+  Linux)
+    mise run build-agent-linux
+    bin="$(pwd)/target/x86_64-unknown-linux-musl/release/booty-call-agent"
+    if [[ -f /etc/booty-call/agent.json ]]; then
+      # re-deploy: replace the binary, keep the installed config
+      sudo bash -c '
+        set -e
+        systemctl stop booty-call-agent || true
+        install -m 755 "$1" /usr/local/bin/booty-call-agent
+        systemctl start booty-call-agent
+        systemctl status booty-call-agent --no-pager --lines=0 || true
+      ' _ "$bin"
+    else
+      # first install: values come from .env
+      for v in BOOTY_BOX_ID BOOTY_OS_ID BOOTY_ALLOWED_PEERS BOOTY_BOOT_ENTRIES; do
+        : "${!v:?first install: set $v in .env (see .env.example)}"
+      done
+      wol=()
+      if [[ -n "${BOOTY_WOL_IFACE:-}" ]]; then wol=(--wol-iface "$BOOTY_WOL_IFACE"); fi
+      control=()
+      if [[ -n "${BOOTY_CONTROL:-}" ]]; then control=(--control "$BOOTY_CONTROL"); fi
+      port=()
+      if [[ -n "${BOOTY_PORT:-}" ]]; then port=(--port "$BOOTY_PORT"); fi
+      sudo install/agent/install-linux.sh \
+        --bin "$bin" \
+        --box-id "$BOOTY_BOX_ID" \
+        --os-id "$BOOTY_OS_ID" \
+        --allowed-peers "$BOOTY_ALLOWED_PEERS" \
+        --boot-entries "$BOOTY_BOOT_ENTRIES" \
+        "${control[@]}" "${port[@]}" "${wol[@]}"
+    fi
+    ;;
+  MINGW*|MSYS*|CYGWIN*)
+    mise run build-agent-windows
+    if [[ -f /c/ProgramData/booty-call/agent.json ]]; then
+      # re-deploy: replace the exe, keep the installed config
+      powershell -ExecutionPolicy Bypass -Command "
+        \$ErrorActionPreference = 'Stop'
+        sc.exe stop bootycallagent | Out-Null
+        Copy-Item (Join-Path (Get-Location) 'target\\x86_64-pc-windows-gnu\\release\\booty-call-agent.exe') \
+          'C:\\Program Files\\booty-call\\booty-call-agent.exe' -Force
+        Start-Service bootycallagent
+      "
+    else
+      # first install: values come from .env
+      for v in BOOTY_BOX_ID BOOTY_OS_ID BOOTY_ALLOWED_PEERS BOOTY_BOOT_ENTRIES; do
+        : "${!v:?first install: set $v in .env (see .env.example)}"
+      done
+      args=( -ExecutionPolicy Bypass -File install/agent/install-windows.ps1
+        -Bin "$(pwd)/target/x86_64-pc-windows-gnu/release/booty-call-agent.exe"
+        -BoxId "$BOOTY_BOX_ID" -OsId "$BOOTY_OS_ID"
+        -AllowedPeers "$BOOTY_ALLOWED_PEERS"
+        -BootEntries "$BOOTY_BOOT_ENTRIES" )
+      if [[ -n "${BOOTY_CONTROL:-}" ]]; then args+=( -Control "$BOOTY_CONTROL" ); fi
+      if [[ -n "${BOOTY_PORT:-}" ]]; then args+=( -Port "$BOOTY_PORT" ); fi
+      powershell "${args[@]}"
+    fi
+    ;;
+  *)
+    echo "unsupported os: $(uname -s)" >&2
+    exit 1;;
+esac
+'''
+
 [tasks.build-agent-linux]
 description = "Static x86_64 agent for the Debian partition"
 run = "cargo build --release -p agent --target x86_64-unknown-linux-musl"
