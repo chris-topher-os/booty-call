@@ -2,49 +2,46 @@
 # Installs the booty-call agent on a Debian switch node (run with sudo).
 #
 # usage:
-#   sudo ./install-linux.sh \
-#     --bin /path/to/booty-call-agent \
-#     --box-id gpu --os-id debian --allowed-peers fabrico \
-#     --control fabrico.tawny-wyrm.ts.net \
-#     --boot-entries '{"debian":1,"windows":2}'
+#   sudo ./install-linux.sh --bin /path/to/booty-call-agent [--wol-iface enp3s0]
 #
-# --allowed-peers: tailscale node name(s) of the control (and any other
-# peers that may talk to this agent), comma-separated.
+# Config lives at /etc/booty-call/agent.json. An existing config is kept;
+# on first install a template is written and must be filled in before the
+# agent will do anything useful:
 #
-# --control: address of the control plane (tailnet FQDN or IP, optional
-# :port, default 8765). With it, the agent registers itself with the
-# control at startup; without it, register the node manually.
+#   box_id         id of this box (shared across its partitions)
+#   os_id          the os this partition runs
+#   allowed_peers  tailscale node name(s) allowed to talk to this agent
+#   boot_entries   maps every os_id this box can boot to its UEFI boot
+#                  entry number (from `sudo efibootmgr -v`; it prints hex,
+#                  the agent wants decimal). The agent needs the full map
+#                  because it may be asked to reboot into any partition.
+#   control        address of the control plane (tailnet FQDN or IP,
+#                  optional :port, default 8765); with it the agent
+#                  registers itself at startup
 #
-# --boot-entries maps every os_id this box can boot to its UEFI boot entry
-# number (from `sudo efibootmgr -v`). The agent needs the full map because
-# it may be asked to reboot into any of the other partitions.
-#
-# --wol-iface: enable Wake-on-LAN (magic packet) on this interface and
-# persist it across reboots via a systemd service. Without it, the script
+# Wake-on-LAN: enabled (magic packet) on --wol-iface and persisted via
+# booty-call-wol.service. Without --wol-iface, the interface is reused
+# from an already-installed wol service; otherwise the script
 # auto-detects a single PCI-backed Ethernet device, and fails if it can't
 # find exactly one (the offline boot flow needs a working WoL, so a failed
 # setup aborts the install before anything is written).
 set -euo pipefail
 
-BIN="" BOX_ID="" OS_ID="" PEERS="" PORT="" ENTRIES='{}' CONTROL="" WOL_IFACE=""
+BIN="" WOL_IFACE=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --bin) BIN="$2"; shift 2;;
-    --box-id) BOX_ID="$2"; shift 2;;
-    --os-id) OS_ID="$2"; shift 2;;
-    --allowed-peers) PEERS="$2"; shift 2;;
-    --port) PORT="$2"; shift 2;;
-    --boot-entries) ENTRIES="$2"; shift 2;;
-    --control) CONTROL="$2"; shift 2;;
     --wol-iface) WOL_IFACE="$2"; shift 2;;
     *) echo "unknown arg: $1" >&2; exit 1;;
   esac
 done
-
-[[ -n "$BIN" && -n "$BOX_ID" && -n "$OS_ID" && -n "$PEERS" ]] || {
-  echo "required: --bin --box-id --os-id --allowed-peers" >&2; exit 1; }
-PEERS_JSON=$(python3 -c "import json,sys; print(json.dumps([p for p in sys.argv[1].split(',') if p]))" "$PEERS")
+[[ -n "$BIN" ]] || { echo "required: --bin" >&2; exit 1; }
 command -v efibootmgr >/dev/null || echo "warning: efibootmgr not found (install the 'efibootmgr' package)" >&2
+
+WOL_SERVICE=/etc/systemd/system/booty-call-wol.service
+if [[ -z "$WOL_IFACE" && -f "$WOL_SERVICE" ]]; then
+  WOL_IFACE=$(awk '/^ExecStart=/{print $3}' "$WOL_SERVICE")
+fi
 
 # --- Wake-on-LAN (set up first, so a failed WoL init aborts before installing)
 
@@ -101,30 +98,29 @@ systemctl daemon-reload
 systemctl enable --now booty-call-wol.service
 echo "enabled Wake-on-LAN (magic packet) on $WOL_IFACE, persisted via booty-call-wol.service"
 
+TEMPLATE=0
+mkdir -p /etc/booty-call
+if [[ ! -f /etc/booty-call/agent.json ]]; then
+  cat > /etc/booty-call/agent.json <<'EOF'
+{
+  "box_id": "<this box's id, e.g. gpu>",
+  "os_id": "<os this partition runs, e.g. debian>",
+  "allowed_peers": ["<control node name>"],
+  "boot_entries": { "<os_id>": <decimal UEFI boot entry number> },
+  "control": "<control tailnet FQDN>"
+}
+EOF
+  TEMPLATE=1
+  echo "wrote config template to /etc/booty-call/agent.json — fill it in"
+fi
+
 # Stop a running agent first so its binary can be replaced (reinstalling).
 systemctl stop booty-call-agent 2>/dev/null || true
 install -D -m 755 "$BIN" /usr/local/bin/booty-call-agent
-mkdir -p /etc/booty-call
-
-PORT_LINE=""
-[[ -n "$PORT" ]] && PORT_LINE=",
-  \"port\": $PORT"
-CONTROL_LINE=""
-[[ -n "$CONTROL" ]] && CONTROL_LINE=",
-  \"control\": \"$CONTROL\""
-
-cat > /etc/booty-call/agent.json <<EOF
-{
-  "box_id": "$BOX_ID",
-  "os_id": "$OS_ID",
-  "allowed_peers": $PEERS_JSON,
-  "boot_entries": $ENTRIES$PORT_LINE$CONTROL_LINE
-}
-EOF
 
 cat > /etc/systemd/system/booty-call-agent.service <<EOF
 [Unit]
-Description=booty-call agent ($BOX_ID/$OS_ID)
+Description=booty-call agent
 After=network-online.target tailscaled.service
 Wants=network-online.target
 
@@ -140,8 +136,8 @@ EOF
 systemctl daemon-reload
 systemctl enable --now booty-call-agent.service
 systemctl --no-pager --lines=0 status booty-call-agent.service || true
-if [[ -z "$CONTROL" ]]; then
-  echo "warning: no --control given; the agent will not self-register (register the node manually)" >&2
-fi
 
-echo "installed booty-call-agent for $BOX_ID/$OS_ID"
+if [[ $TEMPLATE -eq 1 ]]; then
+  echo "edit /etc/booty-call/agent.json, then: systemctl restart booty-call-agent"
+fi
+echo "installed booty-call-agent"

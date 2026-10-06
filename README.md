@@ -56,28 +56,29 @@ the PWA is then also at `https://<control-tailnet-fqdn>`.
 
 ## Install an agent
 
-Replace `<control-address>` with the Tailnet FQDN of the control node.
-
 To get boot entry numbers, run `sudo efibootmgr -v` and look for `BootXXXX`
-values. While `efibootmgr` lists them in hex, the booty-call agent expects
-the decimal equivalent. Also note that every agent needs an entry for every
-agent (including itself) in its `boot-entries`.
+values. While `efibootmgr` lists them in hex, the agent expects the decimal
+equivalent. Also note that every agent needs an entry for every agent
+(including itself).
 
 On Linux:
 
 ```sh
 mise run build-agent-linux
-sudo install/agent/install-linux.sh --bin target/.../booty-call-agent \
-  --box-id <box> --os-id linux --allowed-peers <control-node-name> \
-  --control <control-address> \
-  --boot-entries '{"<os>": <id>, "<sib_os>": <sib_id>}'
+sudo install/agent/install-linux.sh --bin target/.../booty-call-agent
 ```
 
 On Windows (requires an elevated terminal):
 
 ```pwsh
-powershell -ExecutionPolicy Bypass -File install/agent/install-windows.ps1 \
-  -Bin booty-call-agent.exe -BoxId <box> -OsId windows -AllowedPeers <control-node-name> \
-  -Control <control-address> \
-  -BootEntries '{"<os>": <id>, "<sib_os>": <sib_id>}'
+powershell -ExecutionPolicy Bypass -File install/agent/install-windows.ps1 -Bin target/.../booty-call-agent.exe
 ```
+
+The first install writes a config template with placeholders (`/etc/booty-call/agent.json`
+or `C:\ProgramData\booty-call\agent.json`): fill in `box_id`, `os_id`,
+`allowed_peers` (the control node name), `boot_entries`, and `control`
+(the Tailnet FQDN of the control node), then restart the agent service
+(`booty-call-agent` / `bootycallagent`).
+
+On an already-installed machine, `mise run deploy` rebuilds and reinstalls
+everything without touching the config.
